@@ -19,3 +19,11 @@
 # oeffentliches Repository.
 MEMORY.md
 GITHUB_SETUP.md
+
+# Das private Signierschluesselpaar fuer automatische Updates. Der zugehoerige
+# oeffentliche Schluessel steht bereits in tauri-app/src-tauri/tauri.conf.json,
+# der private Teil darf niemals ins Repository, auch nicht in ein spaeter
+# oeffentliches. Er wird stattdessen als GitHub Actions Secret hinterlegt,
+# siehe GITHUB_SETUP.md.
+novastudiocast_updater.key
+*.key

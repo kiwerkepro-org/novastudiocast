@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "PLATZHALTER_BITTE_MIT_EIGENEM_SCHLUESSEL_ERSETZEN",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUzNzk1MTQ0RkM3OUE3RDYKUldUV3AzbjhSRkY1NDRqMGNBUEw3a1d2em1VMFhwdW9mU3I5SXhhQWxtTGlNdFV1NG90cU0xZGUK",
       "endpoints": [
         "https://github.com/kiwerkepro-org/novastudiocast/releases/latest/download/latest.json"
       ]
