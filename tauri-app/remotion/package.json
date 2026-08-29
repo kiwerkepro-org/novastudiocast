@@ -1,0 +1,19 @@
+{
+  "name": "novastudiocast-remotion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion Projekt fuer NovaStudioCast Schritt 4, Zusammenfuegen und Rendering des fertigen Gesamtvideos aus dem Rust Controller Manifest.",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.518",
+    "@remotion/renderer": "4.0.518",
+    "@remotion/transitions": "^4.0.518",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.518",
+    "serve-handler": "^6.1.7"
+  }
+}

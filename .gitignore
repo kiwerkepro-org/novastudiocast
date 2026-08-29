@@ -1,0 +1,16 @@
+# Rust Build Artefakte
+/tauri-app/src-tauri/target/
+
+# Node Abhaengigkeiten des Remotion Projekts, inklusive des von Remotion
+# selbst heruntergeladenen headless Chromium unter node_modules/.remotion/.
+# Wird lokal per "npm install" im Ordner tauri-app/remotion neu erzeugt,
+# siehe docs/ARCHITEKTUR.md.
+/tauri-app/remotion/node_modules/
+
+# Sidecar Binaerdateien selbst werden nicht versioniert, nur per
+# BAUANLEITUNG.md (analog NovaPhonic) besorgt und lokal abgelegt.
+/tauri-app/src-tauri/binaries/*
+!/tauri-app/src-tauri/binaries/.gitkeep
+
+# Von Tauri automatisch beim Build erzeugte Schema Dateien.
+/tauri-app/src-tauri/gen/
