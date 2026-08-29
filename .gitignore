@@ -14,3 +14,8 @@
 
 # Von Tauri automatisch beim Build erzeugte Schema Dateien.
 /tauri-app/src-tauri/gen/
+
+# Dateien, die nur JJ und Claude persoenlich betreffen, gehoeren nicht in ein
+# oeffentliches Repository.
+MEMORY.md
+GITHUB_SETUP.md
