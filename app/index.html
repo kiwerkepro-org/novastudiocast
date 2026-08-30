@@ -56,26 +56,29 @@
 
   <div class="main-split">
 
-    <!-- Linker Bereich: Chat. Rein optische Hülle für die geplante Steuerung
-         per Textbefehl über eine lokale Sprachmodell Anbindung, siehe
-         app.js Kopfkommentar. Noch ohne echte Funktion dahinter. -->
+    <!-- Linker Bereich: Chat, seit dieser Sitzung echt angebunden über eine
+         vom Nutzer selbst installierte und laufende Ollama Instanz, siehe
+         app.js Abschnitt "Chat / Ollama" sowie src-tauri/src/chat/. -->
     <div class="panel chat-panel">
       <div class="chat-header">
-        <h2>Chat Steuerung <span class="badge-soon">Demnächst</span></h2>
+        <h2>Chat Steuerung <span class="badge-soon" id="chatBadge">Lokal</span></h2>
       </div>
-      <div class="chat-messages" id="chatMessages">
-        <div class="chat-message from-system">
-          Hallo! Hier wirst du NovaStudioCast bald per Textbefehl steuern können,
-          zum Beispiel "füge alle drei Clips zusammen und schneide die Pausen
-          raus". Diese Steuerung ist noch nicht angeschlossen, benutze bis dahin
-          bitte den Bereich rechts.
+
+      <!-- Ollama Status, Modellwahl und Downloadfortschritt, ersetzt die
+           eigentliche Unterhaltung, solange noch kein Modell aktiv ist,
+           siehe app.js, initChat/showChatSetupState. -->
+      <div class="chat-setup" id="chatSetup">
+        <div class="chat-setup-inner" id="chatSetupContent">
+          <div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>
         </div>
       </div>
-      <div class="chat-input-row">
-        <textarea id="chatInput" placeholder="Noch nicht verfügbar…" disabled></textarea>
+
+      <div class="chat-messages" id="chatMessages" style="display:none;"></div>
+      <div class="chat-input-row" id="chatInputRow" style="display:none;">
+        <textarea id="chatInput" placeholder="Textbefehl eingeben…" disabled></textarea>
         <button id="chatSendBtn" class="secondary" type="button" disabled>Senden</button>
       </div>
-      <div class="chat-note">Lokale Sprachmodell Anbindung ist als eigenes Vorhaben vorgemerkt, siehe MEMORY.md.</div>
+      <div class="chat-note" id="chatNote">Lokale Sprachmodell Anbindung über Ollama, läuft komplett auf deinem Rechner.</div>
     </div>
 
     <!-- Rechter Bereich: dynamischer Kontextbereich, die eigentliche

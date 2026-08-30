@@ -6,12 +6,13 @@
  * selbst werden nie in dieses Skript geladen, es werden nur Dateipfade
  * zwischen Oberfläche und Rust ausgetauscht.
  *
- * Der linke Chatbereich (siehe index.html, .chat-panel) ist bewusst nur
- * eine optische Hülle ohne echte Funktion. Eine Steuerung per Textbefehl
- * über eine lokale Sprachmodell Anbindung ist ein eigenes, größeres
- * Vorhaben (Wahl des Modells, Übersetzung von Text in echte Tauri
- * Befehle), siehe MEMORY.md, "Offene Punkte für die nächste Sitzung". Bis
- * dahin läuft die gesamte Steuerung über den rechten Kontextbereich.
+ * Der linke Chatbereich (siehe index.html, .chat-panel) ist seit dieser
+ * Sitzung echt angebunden: lokale Sprachmodell Steuerung über eine vom
+ * Nutzer selbst installierte und laufende Ollama Instanz (siehe
+ * src-tauri/src/chat/, HTTP auf localhost:11434). Der Chat kann
+ * Einstellungen ändern und die Verarbeitung starten, siehe Abschnitt
+ * "Chat / Ollama" weiter unten. Videos selbst kommen weiterhin
+ * ausschließlich per Drag and Drop im rechten Bereich in die Liste.
  */
 (function () {
   "use strict";
@@ -295,6 +296,350 @@
     };
   }
 
+
+  // ---------- Chat / Ollama ----------
+  // Lokale Chat KI Steuerung ueber eine vom Nutzer selbst installierte und
+  // laufende Ollama Instanz, siehe src-tauri/src/chat/ fuer die Rust
+  // seitige HTTP Anbindung und Projektgedaechtnis "chat_ki_modelle" fuer
+  // die Modellauswahl. Der Chat kann ausschliesslich Einstellungen aendern
+  // und die Verarbeitung starten (siehe applyChatToolCall), Videos selbst
+  // bleiben ausschliesslich per Drag and Drop im rechten Bereich steuerbar.
+  const ACTIVE_CHAT_MODEL_KEY = 'novastudiocast-chat-model';
+
+  const chatSetup = $('chatSetup');
+  const chatSetupContent = $('chatSetupContent');
+  const chatMessages = $('chatMessages');
+  const chatBadge = $('chatBadge');
+  const chatNote = $('chatNote');
+  const chatInput = $('chatInput');
+  const chatSendBtn = $('chatSendBtn');
+  const chatInputRow = $('chatInputRow');
+
+  let chatModels = [];
+  let installedModelIds = new Set();
+  let activeChatModel = null;
+  let chatHistory = [];
+  let currentPullCard = null;
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function appendChatMessage(role, text) {
+    const div = document.createElement('div');
+    div.className = 'chat-message from-' + role;
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function showChatSetupState(html) {
+    chatSetupContent.innerHTML = html;
+    chatSetup.style.display = '';
+    chatMessages.style.display = 'none';
+    chatInputRow.style.display = 'none';
+  }
+
+  // Ollama haengt bei einem eigenen, frei waehlbaren Tag (z.B.
+  // "gemma4:e2b") den Namen unveraendert, bei einem Modell ohne
+  // ausdruecklichen Tag (z.B. "phi4-mini") aber automatisch ":latest" an,
+  // siehe Ollama API Dokumentation, /api/tags. Diese Funktion gleicht
+  // beide Faelle ab, statt nur auf exakte Gleichheit zu pruefen.
+  function installedNameMatchesId(installedName, id) {
+    if (installedName === id) return true;
+    if (id.indexOf(':') === -1 && installedName === id + ':latest') return true;
+    return false;
+  }
+
+  function activateChat(modelId) {
+    activeChatModel = modelId;
+    try { localStorage.setItem(ACTIVE_CHAT_MODEL_KEY, modelId); } catch (e) { /* egal */ }
+
+    chatSetup.style.display = 'none';
+    chatMessages.style.display = '';
+    chatInputRow.style.display = '';
+    chatInput.disabled = false;
+    chatSendBtn.disabled = false;
+    chatInput.placeholder = 'Textbefehl eingeben…';
+
+    const model = chatModels.find((m) => m.id === modelId);
+    const label = model ? model.label : modelId;
+    chatBadge.textContent = label;
+    chatBadge.title = 'Anderes Modell wählen';
+    chatBadge.classList.add('badge-active');
+    chatNote.textContent = 'Lokales Modell „' + label + '“, läuft komplett auf deinem Rechner über Ollama, keine Daten verlassen ihn.';
+
+    if (chatMessages.children.length === 0) {
+      appendChatMessage('system',
+        'Bereit. Du kannst mich jetzt per Text steuern, zum Beispiel „schalte das ' +
+        'Entrauschen aus“ oder „starte die Verarbeitung“. Videos fügst du weiterhin ' +
+        'rechts per Drag and Drop hinzu.');
+    }
+    chatInput.focus();
+  }
+
+  function renderModelPicker() {
+    const cards = chatModels.map((m) => {
+      const installed = installedModelIds.has(m.id);
+      return (
+        '<div class="model-card" data-model-id="' + m.id + '">' +
+          '<div class="model-card-head">' +
+            '<span class="model-card-label">' + escapeHtml(m.label) + '</span>' +
+            '<span class="model-card-ram">' + escapeHtml(m.ramHint) + '</span>' +
+          '</div>' +
+          '<div class="model-card-desc">' + escapeHtml(m.description) + '</div>' +
+          '<div class="model-card-action">' +
+            '<button class="secondary mc-action-btn" type="button">' +
+              (installed ? 'Verwenden' : 'Herunterladen') +
+            '</button>' +
+            (installed ? '<span class="model-card-installed">installiert</span>' : '') +
+          '</div>' +
+          '<div class="model-card-progress" style="display:none;">' +
+            '<div class="model-progress-bar"><div class="model-progress-fill" style="width:0%"></div></div>' +
+            '<div class="model-progress-label"></div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    showChatSetupState(
+      '<div class="chat-setup-intro">Wähle ein lokales KI Modell für die Chatsteuerung. ' +
+      'Läuft komplett auf diesem Rechner, es werden keine Daten verschickt.</div>' +
+      '<div class="model-card-list">' + cards + '</div>'
+    );
+
+    chatSetupContent.querySelectorAll('.model-card').forEach((card) => {
+      const modelId = card.dataset.modelId;
+      card.querySelector('.mc-action-btn').addEventListener('click', () => onModelCardClick(modelId, card));
+    });
+  }
+
+  async function onModelCardClick(modelId, card) {
+    if (installedModelIds.has(modelId)) {
+      activateChat(modelId);
+      return;
+    }
+    const btn = card.querySelector('.mc-action-btn');
+    const progressBox = card.querySelector('.model-card-progress');
+    const fill = card.querySelector('.model-progress-fill');
+    const label = card.querySelector('.model-progress-label');
+    btn.disabled = true;
+    btn.textContent = 'Lädt…';
+    progressBox.style.display = 'block';
+    label.textContent = 'Start…';
+
+    currentPullCard = { modelId, fill, label };
+    try {
+      await window.__TAURI__.core.invoke('ollama_pull_model', { model: modelId });
+      installedModelIds.add(modelId);
+      activateChat(modelId);
+    } catch (e) {
+      console.error(e);
+      label.textContent = 'Fehlgeschlagen: ' + String(e);
+      btn.disabled = false;
+      btn.textContent = 'Erneut versuchen';
+    } finally {
+      currentPullCard = null;
+    }
+  }
+
+  async function initOllamaPullListener() {
+    if (!isTauri()) return;
+    await window.__TAURI__.event.listen('ollama-pull-progress', (event) => {
+      if (!currentPullCard) return;
+      const p = event.payload || {};
+      if (p.model !== currentPullCard.modelId) return;
+      if (p.total && p.completed) {
+        const pct = Math.max(0, Math.min(100, Math.round((p.completed / p.total) * 100)));
+        currentPullCard.fill.style.width = pct + '%';
+        currentPullCard.label.textContent =
+          pct + ' % (' + formatBytes(p.completed) + ' / ' + formatBytes(p.total) + ')';
+      } else {
+        currentPullCard.label.textContent = p.status || 'lädt…';
+      }
+    });
+  }
+
+  function showOllamaOfflineHint() {
+    showChatSetupState(
+      '<div class="ollama-offline-box">' +
+        '<strong>Ollama läuft gerade nicht.</strong> Für die Chatsteuerung einmalig ' +
+        '<a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> ' +
+        'installieren und starten, danach hier erneut prüfen.' +
+      '</div>' +
+      '<div class="actions"><button class="secondary" id="chatRecheckBtn" type="button">Erneut prüfen</button></div>'
+    );
+    const btn = $('chatRecheckBtn');
+    if (btn) btn.addEventListener('click', initChat);
+  }
+
+  // preferSaved=true (Start der Anwendung): ein zuvor gewaehltes,
+  // weiterhin installiertes Modell wird automatisch wieder aktiviert.
+  // preferSaved=false (Klick auf das aktive Badge, "Modell wechseln"):
+  // zeigt immer die Modellwahl, auch wenn ein gemerktes Modell noch
+  // installiert ist, sonst liesse sich nie zu einem anderen Modell
+  // wechseln.
+  async function initChat(preferSaved) {
+    if (preferSaved === undefined) preferSaved = true;
+    if (!isTauri()) {
+      showChatSetupState('<div class="empty-hint">Chatsteuerung ist nur innerhalb der NovaStudioCast Anwendung verfügbar.</div>');
+      return;
+    }
+    showChatSetupState('<div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>');
+
+    let status;
+    try {
+      status = await window.__TAURI__.core.invoke('ollama_status');
+    } catch (e) {
+      status = { running: false };
+    }
+    if (!status || !status.running) {
+      showOllamaOfflineHint();
+      return;
+    }
+
+    let models = [];
+    let installed = [];
+    try {
+      [models, installed] = await Promise.all([
+        window.__TAURI__.core.invoke('list_chat_models'),
+        window.__TAURI__.core.invoke('ollama_installed_models'),
+      ]);
+    } catch (e) {
+      console.error(e);
+      showChatSetupState('<div class="status-error">Ollama antwortet, aber die Modellliste konnte nicht geladen werden: ' + escapeHtml(String(e)) + '</div>');
+      return;
+    }
+
+    chatModels = models;
+    const installedNames = installed.map((m) => m.name);
+    installedModelIds = new Set(
+      chatModels.filter((m) => installedNames.some((n) => installedNameMatchesId(n, m.id))).map((m) => m.id)
+    );
+
+    let saved = null;
+    try { saved = localStorage.getItem(ACTIVE_CHAT_MODEL_KEY); } catch (e) { /* egal */ }
+    if (preferSaved && saved && installedModelIds.has(saved)) {
+      activateChat(saved);
+      return;
+    }
+    renderModelPicker();
+  }
+
+  chatBadge.addEventListener('click', () => {
+    if (chatBadge.classList.contains('badge-active')) initChat(false);
+  });
+
+  function buildChatContext() {
+    return {
+      clipNames: clips.map((c) => fileNameOf(c.path)),
+      denoise: $('denoiseToggle').checked,
+      loudnorm: loudnormToggle.checked,
+      loudnormTarget: parseInt($('loudnormTarget').value, 10),
+      marginSeconds: parseInt(marginSlider.value, 10) / 10,
+      aiDisclosureActive: aiDisclosureToggle.checked,
+    };
+  }
+
+  // Wendet einen einzelnen Werkzeugaufruf des Modells auf die echten
+  // Bedienelemente an, genau als hätte der Nutzer selbst geklickt
+  // (inklusive der bestehenden sync* Funktionen, damit z.B. die
+  // Lautheit Auswahl korrekt ein oder ausgeblendet wird). Kein separates
+  // Ausführen der Pipeline direkt aus dem Chat Modul heraus, siehe
+  // src-tauri/src/chat/mod.rs Kopfkommentar für die Begründung.
+  function applyChatToolCall(toolCall) {
+    const args = toolCall.arguments || {};
+    if (toolCall.name === 'set_pipeline_options') {
+      const changed = [];
+      if (typeof args.denoise === 'boolean') {
+        $('denoiseToggle').checked = args.denoise;
+        changed.push('Entrauschen ' + (args.denoise ? 'an' : 'aus'));
+      }
+      if (typeof args.loudnorm === 'boolean') {
+        loudnormToggle.checked = args.loudnorm;
+        syncLoudnormOptions();
+        changed.push('Lautstärke angleichen ' + (args.loudnorm ? 'an' : 'aus'));
+      }
+      if (args.loudnormTarget !== undefined && args.loudnormTarget !== null) {
+        const val = String(parseInt(args.loudnormTarget, 10));
+        const select = $('loudnormTarget');
+        if (Array.prototype.some.call(select.options, (o) => o.value === val)) {
+          select.value = val;
+          changed.push('Ziel Lautheit ' + val + ' LUFS');
+        }
+      }
+      if (args.marginSeconds !== undefined && args.marginSeconds !== null) {
+        const num = Number(args.marginSeconds);
+        if (Number.isFinite(num)) {
+          const clamped = Math.max(0, Math.min(1, num));
+          marginSlider.value = String(Math.round(clamped * 10));
+          updateMarginTag();
+          changed.push('Zeitpuffer ' + clamped.toFixed(1).replace('.', ',') + ' s');
+        }
+      }
+      if (typeof args.aiDisclosureActive === 'boolean') {
+        aiDisclosureToggle.checked = args.aiDisclosureActive;
+        syncAiDisclosureOptions();
+        changed.push('KI Kennzeichnung ' + (args.aiDisclosureActive ? 'an' : 'aus'));
+      }
+      appendChatMessage('system', changed.length
+        ? 'Einstellungen aktualisiert: ' + changed.join(', ') + '.'
+        : 'Dazu gab es nichts zu ändern.');
+      return;
+    }
+    if (toolCall.name === 'start_batch_pipeline') {
+      if (clips.length === 0) {
+        appendChatMessage('system', 'Es liegen noch keine Videos in der Liste, bitte erst rechts per Drag and Drop hinzufügen.');
+        return;
+      }
+      appendChatMessage('system', 'Starte die Verarbeitung…');
+      startPipeline();
+      return;
+    }
+  }
+
+  async function sendChatMessage() {
+    const text = chatInput.value.trim();
+    if (!text || !activeChatModel) return;
+    chatInput.value = '';
+    chatInput.disabled = true;
+    chatSendBtn.disabled = true;
+    appendChatMessage('user', text);
+    chatHistory.push({ role: 'user', content: text });
+
+    try {
+      const reply = await window.__TAURI__.core.invoke('ollama_send_message', {
+        model: activeChatModel,
+        history: chatHistory,
+        context: buildChatContext(),
+      });
+      const replyText = (reply.content || '').trim();
+      const toolCalls = reply.toolCalls || [];
+      if (replyText) {
+        appendChatMessage('assistant', replyText);
+        chatHistory.push({ role: 'assistant', content: replyText });
+      } else if (toolCalls.length === 0) {
+        appendChatMessage('assistant', 'Dazu ist mir gerade keine Antwort eingefallen, magst du es anders formulieren?');
+      }
+      toolCalls.forEach(applyChatToolCall);
+    } catch (e) {
+      console.error(e);
+      appendChatMessage('system', 'Antwort fehlgeschlagen: ' + String(e));
+    } finally {
+      chatInput.disabled = false;
+      chatSendBtn.disabled = false;
+      chatInput.focus();
+    }
+  }
+
+  chatSendBtn.addEventListener('click', sendChatMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
   // ---------- Pipeline Ablauf ----------
   // Je Clip drei Schritte (siehe pipeline/mod.rs, run_clip_steps), plus ein
   // batchweiter Render Schritt am Ende (clipId ist dabei null, siehe
@@ -432,7 +777,13 @@
   }
 
   const startBtn = $('startBtn');
-  startBtn.addEventListener('click', async () => {
+
+  // Gemeinsamer Startweg für den "Start" Knopf und für einen
+  // start_batch_pipeline Werkzeugaufruf aus dem Chat (siehe Abschnitt
+  // "Chat / Ollama" weiter unten, applyChatToolCall), damit beide Wege
+  // exakt dieselben jobs/options aus dem aktuellen Oberflächenzustand
+  // bauen, statt die Logik doppelt zu pflegen.
+  async function startPipeline() {
     if (clips.length === 0 || !isTauri()) return;
     startBtn.disabled = true;
     dropzone.style.pointerEvents = 'none';
@@ -465,7 +816,8 @@
       startBtn.disabled = clips.length === 0;
       dropzone.style.pointerEvents = '';
     }
-  });
+  }
+  startBtn.addEventListener('click', startPipeline);
 
   function showResult(result) {
     const name = fileNameOf(result.finalVideoPath);
@@ -557,6 +909,8 @@
   renderClipList();
   initVersionTag();
   initProgressListener();
+  initOllamaPullListener();
   checkTools();
   checkForUpdate(true);
+  initChat();
 })();

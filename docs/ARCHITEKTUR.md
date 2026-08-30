@@ -360,3 +360,121 @@ NovaPhonics `BAUANLEITUNG.md` bereits beschreibt. Der erste Build mit den
 echten Sidecars auf einem Windows Rechner oder per GitHub Actions bleibt
 also weiterhin der erste vollständige Praxistest der Anwendung als
 Ganzes.
+
+## Chat KI Anbindung, lokale Stufe (Sitzung 5, 2026-08-30)
+
+Erster Teil des in Sitzung 3 offen gelassenen Punkts "Chatbereich mit
+echter Funktion" (siehe MEMORY.md), und zwar bewusst nur die lokale
+Stufe. Eine separat geplante, kostenpflichtige Cloud/API Stufe ist
+Projektgedächtnis "monetarisierung" als eigener, späterer Auftrag
+vorgemerkt, hier nicht enthalten.
+
+### Grundprinzip
+
+Der Chat übersetzt deutsche Textbefehle in genau zwei mögliche
+Werkzeugaufrufe, nicht in freie Pipeline Steuerung: `set_pipeline_options`
+(ändert Häkchen, Regler und Auswahlfelder im rechten Bereich) und
+`start_batch_pipeline` (löst denselben Startweg aus wie der "Start"
+Knopf). Die Clipliste selbst bleibt bewusst ausschließlich per Drag and
+Drop steuerbar, siehe Sitzung 3, das Sprachmodell kann Videos weder
+hinzufügen noch entfernen. Grund für nur zwei Werkzeuge statt vieler
+kleiner: laut Recherche zur Modellauswahl (Projektgedächtnis
+"chat_ki_modelle") sinkt bei kleinen lokalen Modellen die Zuverlässigkeit
+von Werkzeugaufrufen mit der Zahl der angebotenen Werkzeuge, entscheidend
+ist die valide JSON/Werkzeugaufruf Rate, nicht die Chatqualität an sich.
+
+### Ollama Anbindung, kein Sidecar
+
+Anders als auto-editor, DeepFilterNet, FFmpeg und Node/Remotion wird
+Ollama NICHT gebündelt und läuft nicht als Sidecar Prozess (siehe
+sidecar.rs). Es ist ein vom Nutzer selbst separat installiertes und
+gestartetes Programm, das lokal einen HTTP Server auf Port 11434
+bereitstellt. Neues Modul `chat/` (`chat/mod.rs`, `chat/client.rs`,
+`chat/tools.rs`) spricht diesen Server ganz normal per HTTP an (Crate
+`reqwest`, mit `rustls-tls` statt der Standard TLS Anbindung, damit kein
+zusätzliches System OpenSSL gebraucht wird, weder beim eigenen Testen
+noch potenziell beim Windows Build). Verwendete Endpunkte, nach Ollamas
+offizieller API Dokumentation:
+
+- `GET /api/version`: Erreichbarkeitscheck (`ollama_status`), 2 Sekunden
+  Zeitlimit, damit die Oberfläche nicht lange hängt, falls Ollama gar
+  nicht läuft.
+- `GET /api/tags`: bereits lokal installierte Modelle (`ollama_installed_models`).
+- `POST /api/pull` (streaming NDJSON): Modell Download mit
+  Fortschrittsmeldung (`ollama_pull_model`), eigenes Tauri Ereignis
+  `ollama-pull-progress`, unabhängig vom `pipeline-progress` Ereignis der
+  eigentlichen Videopipeline. Kein Zeitlimit auf dem HTTP Client, ein
+  Download kann mehrere Minuten dauern.
+- `POST /api/chat` mit `tools`, `stream: false` (`ollama_send_message`):
+  die eigentliche Unterhaltung. Bewusst ohne Streaming, ein Tippeffekt
+  bringt auf schwacher CPU wenig, eine einzige vollständige Antwort ist
+  einfacher zuverlässig zu verarbeiten, gerade wegen der Werkzeugaufrufe.
+
+Wichtige Abgrenzung, siehe Kopfkommentar `chat/mod.rs`: das Modul führt
+Werkzeugaufrufe NICHT selbst aus, es reicht sie unverändert an das
+Frontend weiter (`ChatReply.toolCalls`). Die Clipliste (Pfade,
+Reihenfolge) lebt ausschließlich im Frontend (`app.js`, Variable
+`clips`), eine zweite Kopie in Rust hätte doppelt gepflegt werden müssen.
+`app.js` wendet einen Werkzeugaufruf genauso an, wie es ein manueller
+Klick auf die jeweiligen Bedienelemente auch täte (`applyChatToolCall`),
+und nutzt für den Start denselben Weg wie der "Start" Knopf
+(`startPipeline`, aus dem bisherigen `startBtn` Klick Handler
+herausgelöst).
+
+### Modellauswahl
+
+Feste Liste von vier Modellen in `chat::CHAT_MODELS`
+(`gemma4:e2b`, `gemma4:e4b`, `phi4-mini`, `qwen3:8b`), Reihenfolge, Text
+und RAM Angaben von JJ festgelegt, Begründung und Quellen siehe
+Projektgedächtnis "chat_ki_modelle". Bewusst als feste, nicht vom Nutzer
+erweiterbare Liste im Rust Code, damit nur für diesen Anwendungsfall
+(Textbefehl zu Werkzeugaufruf) und für eher schwache Hardware geprüfte
+Modelle angeboten werden. Die Oberfläche merkt sich die zuletzt gewählte
+Modell ID in `localStorage` (`novastudiocast-chat-model`) und aktiviert
+sie beim nächsten Start automatisch wieder, sofern noch installiert;
+ein Klick auf das Modell Badge in der Chat Kopfzeile zeigt die
+Modellwahl gezielt erneut (`initChat(false)`, überspringt die
+automatische Wiederauswahl).
+
+### Test dieser Sitzung
+
+Wie bei den bisherigen Funktionen echt getestet, nicht nur entworfen,
+mit denselben zwei Bausteinen wie schon in früheren Sitzungen (siehe
+weiter oben in dieser Datei zum Kompiliertest ohne echte Sidecars,
+sowie Sitzung 3 zum Playwright Test des Frontends):
+
+1. **Rust:** `cargo check` und `cargo clippy` liefen nicht in dieser
+   Arbeitsumgebung selbst (kein Rust Toolchain, kein Root Zugriff, siehe
+   unten), sondern in einer separaten Linux Umgebung mit vollem Zugriff:
+   Rust Toolchain sowie alle Tauri Linux Systemabhängigkeiten
+   (webkit2gtk, gtk3, libayatana-appindicator3 u.a.) frisch installiert,
+   exakter Quellcode dorthin übertragen, `cargo check` lief fehlerfrei
+   durch, `cargo clippy` zeigte 13 Hinweise, ausnahmslos in bereits
+   vorher bestehendem Code (`pipeline/*.rs`, `sidecar.rs`,
+   `pipeline/types.rs`), keiner davon im neuen `chat/` Modul. Genau wie
+   beim erwähnten früheren Kompiliertest wurden dafür Platzhalter Dateien
+   für `externalBin`, Icons und den Remotion Ressourcenordner angelegt,
+   deren Inhalt für `cargo check` unerheblich ist.
+2. **Frontend:** Playwright gegen die echten `app/index.html`/`app.js`
+   Dateien, mit einem simulierten `window.__TAURI__` (alle neuen sowie
+   die bestehenden Commands gemockt, inklusive simulierter
+   `ollama-pull-progress` Ereignisse). 22 Prüfungen über vier Szenarien:
+   Ollama nicht erreichbar (Hinweistext, Link, "Erneut prüfen"), Ollama
+   erreichbar ohne installiertes Modell (Kartenreihenfolge, RAM Angaben,
+   Download samt Fortschritt und automatischer Aktivierung), bereits
+   installiertes Modell (direktes "Verwenden", Werkzeugaufruf ändert
+   tatsächlich `denoiseToggle`, `start_batch_pipeline` OHNE Videos in der
+   Liste löst `run_batch_pipeline` ausdrücklich NICHT aus, MIT einem
+   Video schon, samt korrekt übernommener geänderter Einstellung), sowie
+   Moduswechsel über das Badge. Alle 22 grün, dazu zwei Screenshots
+   (Modellwahl, aktiver Chat) von Hand geprüft.
+
+**Ehrlich benannt, echte Einschränkung dieser Sitzung:** kein Zugriff auf
+eine laufende echte Ollama Instanz, alle API Antworten in Test 2 sind
+simuliert, keine dieser Sitzung getestete Aussage prüft also die
+tatsächliche Antwortqualität eines echten Modells oder etwaige
+Abweichungen der wirklichen Ollama API von ihrer Dokumentation. Das
+Prompt/Werkzeug Design (`chat/tools.rs`) ist dementsprechend eine erste,
+begründete Fassung, kein an echten Modellantworten feingeschliffenes
+Ergebnis. Erster echter Test mit laufendem Ollama und einem der vier
+Modelle steht auf JJs eigenem Rechner noch aus.

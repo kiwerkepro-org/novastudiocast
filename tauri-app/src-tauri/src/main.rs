@@ -9,16 +9,24 @@
 // Clips im Batch und eine dritte, reine Analysestufe statt einer echten
 // Schnitt Renderstufe erweitert.
 //
+// Seit dieser Sitzung zusätzlich: chat/, die lokale Chat KI Anbindung
+// (Ollama), siehe chat/mod.rs Kopfkommentar für den Zuschnitt.
+//
 // Hinweis wie schon bei NovaPhonic (siehe dortige BAUANLEITUNG.md): dieser
 // Code wurde von Hand geschrieben und noch nicht kompiliert, der erste
 // echte Build ist der erste Kompiliertest. Siehe docs/ARCHITEKTUR.md für
 // die Liste der Stellen, die dabei besonders zu prüfen sind.
 
+mod chat;
 mod cutlist;
 mod manifest;
 mod pipeline;
 mod sidecar;
 
+use chat::{
+    list_chat_models, ollama_installed_models, ollama_pull_model, ollama_send_message,
+    ollama_status,
+};
 use pipeline::types::{BatchResult, ClipJob, PipelineOptions};
 use std::fs;
 use std::path::PathBuf;
@@ -79,6 +87,11 @@ fn save_output_as(source_path: String, suggested_name: String) -> Result<String,
 // portable Node.js Laufzeit als Sidecar, das mitgelieferte Remotion
 // Projekt selbst liegt als Ressource unter resources/remotion/, nicht als
 // eigenes Sidecar.
+//
+// Ollama gehört bewusst NICHT in diese Liste: es wird nicht gebündelt,
+// sondern vom Nutzer separat installiert und läuft als eigener
+// Hintergrunddienst, angesprochen per HTTP statt per Sidecar, siehe
+// chat/client.rs.
 const SIDECARS: [(&str, &str); 4] = [
     ("auto-editor", "--version"),
     ("deep-filter", "--version"),
@@ -137,7 +150,12 @@ fn main() {
             pick_video_files,
             save_output_as,
             check_tools,
-            run_batch_pipeline
+            run_batch_pipeline,
+            list_chat_models,
+            ollama_status,
+            ollama_installed_models,
+            ollama_pull_model,
+            ollama_send_message
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Starten der Tauri Anwendung");

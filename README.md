@@ -72,8 +72,8 @@ statt.
 ## Nächste Schritte (geplant)
 
 - Erster veröffentlichter Windows Installer über GitHub Actions.
-- Echte, lokale Chat-Funktion in der Oberfläche (aktuell nur eine stumme
-  optische Hülle).
+- Chat KI Funktion, Cloud/API Stufe mit Bezahlschranke (lokale Stufe mit
+  Ollama ist bereits umgesetzt und getestet).
 - Untertitel, Kapitelmarken und Kennzeichnung KI-bearbeiteter Inhalte gemäß
   EU AI Act.
 

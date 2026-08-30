@@ -18,6 +18,13 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-shell = "2"
+# Für die lokale Chat KI Anbindung (chat/client.rs): reines HTTP zu einer
+# bereits vom Nutzer laufenden Ollama Instanz auf localhost, kein eigenes
+# Tauri Plugin nötig, weil ausschließlich von Rust Code aus aufgerufen,
+# nie direkt vom Frontend. "stream" für den Modell Download Fortschritt
+# (/api/pull), "json" für die eigentlichen Anfragen/Antworten.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
 
 [[bin]]
 name = "novastudiocast"
