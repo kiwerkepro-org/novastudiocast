@@ -304,10 +304,20 @@
   // die Modellauswahl. Der Chat kann ausschliesslich Einstellungen aendern
   // und die Verarbeitung starten (siehe applyChatToolCall), Videos selbst
   // bleiben ausschliesslich per Drag and Drop im rechten Bereich steuerbar.
+  //
+  // Seit Sitzung 6: die Modellwahl/Einrichtung liegt in einem eigenen
+  // Popup (chatSetupOverlay), nicht mehr fest im Chatbereich. Grund,
+  // Rueckmeldung JJ: "wenn irgendetwas installiert ist, kann ich trotzdem
+  // im Chat nichts eingeben", weil die Modellwahl vorher jedes Mal den
+  // ganzen Chatbereich belegt hat, bis man sie durchgeklickt hatte. Chat
+  // Nachrichten und Eingabefeld sind jetzt immer sichtbar, das "Lokal"
+  // Abzeichen im Kopf ist immer klickbar und oeffnet bei Bedarf das Popup.
   const ACTIVE_CHAT_MODEL_KEY = 'novastudiocast-chat-model';
 
-  const chatSetup = $('chatSetup');
+  const chatSetupOverlay = $('chatSetupOverlay');
   const chatSetupContent = $('chatSetupContent');
+  const chatSetupCloseBtn = $('chatSetupCloseBtn');
+  const chatSetupOkBtn = $('chatSetupOkBtn');
   const chatMessages = $('chatMessages');
   const chatBadge = $('chatBadge');
   const chatNote = $('chatNote');
@@ -320,6 +330,9 @@
   let activeChatModel = null;
   let chatHistory = [];
   let currentPullCard = null;
+  // null = noch nicht geprueft, sonst true/false. Steuert, welchen
+  // Hinweistext das (bis zur Modellwahl deaktivierte) Eingabefeld zeigt.
+  let ollamaKnownRunning = null;
 
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -333,11 +346,50 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
-  function showChatSetupState(html) {
+  function setChatSetupContent(html) {
     chatSetupContent.innerHTML = html;
-    chatSetup.style.display = '';
-    chatMessages.style.display = 'none';
-    chatInputRow.style.display = 'none';
+  }
+
+  function openChatSetupModal() {
+    chatSetupOverlay.style.display = 'flex';
+    runChatSetupCheck();
+  }
+
+  function closeChatSetupModal() {
+    chatSetupOverlay.style.display = 'none';
+  }
+
+  // Eingabefeld bleibt deaktiviert, bis ein Modell aktiv ist, zeigt aber
+  // je nach Stand als Platzhaltertext, was als naechstes zu tun ist,
+  // statt nur "eingeben" ohne Erklaerung.
+  function updateChatAvailability() {
+    if (activeChatModel) {
+      chatInput.disabled = false;
+      chatSendBtn.disabled = false;
+      chatInput.placeholder = 'Textbefehl eingeben…';
+      return;
+    }
+    chatInput.disabled = true;
+    chatSendBtn.disabled = true;
+    if (ollamaKnownRunning === false) {
+      chatInput.placeholder = 'Ollama läuft nicht – oben auf „Lokal“ klicken';
+    } else if (ollamaKnownRunning === true) {
+      chatInput.placeholder = 'Noch kein Modell gewählt – oben auf „Lokal“ klicken';
+    } else {
+      chatInput.placeholder = 'Prüfe Ollama…';
+    }
+  }
+
+  function setChatBadgeState() {
+    chatBadge.classList.remove('needs-setup', 'model-active');
+    if (activeChatModel) {
+      const model = chatModels.find((m) => m.id === activeChatModel);
+      chatBadge.textContent = model ? model.label : activeChatModel;
+      chatBadge.classList.add('model-active');
+    } else {
+      chatBadge.textContent = 'Lokal';
+      if (ollamaKnownRunning !== null) chatBadge.classList.add('needs-setup');
+    }
   }
 
   // Ollama haengt bei einem eigenen, frei waehlbaren Tag (z.B.
@@ -355,18 +407,12 @@
     activeChatModel = modelId;
     try { localStorage.setItem(ACTIVE_CHAT_MODEL_KEY, modelId); } catch (e) { /* egal */ }
 
-    chatSetup.style.display = 'none';
-    chatMessages.style.display = '';
-    chatInputRow.style.display = '';
-    chatInput.disabled = false;
-    chatSendBtn.disabled = false;
-    chatInput.placeholder = 'Textbefehl eingeben…';
+    updateChatAvailability();
+    setChatBadgeState();
+    chatBadge.title = 'Anderes Modell wählen';
 
     const model = chatModels.find((m) => m.id === modelId);
     const label = model ? model.label : modelId;
-    chatBadge.textContent = label;
-    chatBadge.title = 'Anderes Modell wählen';
-    chatBadge.classList.add('badge-active');
     chatNote.textContent = 'Lokales Modell „' + label + '“, läuft komplett auf deinem Rechner über Ollama, keine Daten verlassen ihn.';
 
     if (chatMessages.children.length === 0) {
@@ -375,6 +421,7 @@
         'Entrauschen aus“ oder „starte die Verarbeitung“. Videos fügst du weiterhin ' +
         'rechts per Drag and Drop hinzu.');
     }
+    closeChatSetupModal();
     chatInput.focus();
   }
 
@@ -402,7 +449,7 @@
       );
     }).join('');
 
-    showChatSetupState(
+    setChatSetupContent(
       '<div class="chat-setup-intro">Wähle ein lokales KI Modell für die Chatsteuerung. ' +
       'Läuft komplett auf diesem Rechner, es werden keine Daten verschickt.</div>' +
       '<div class="model-card-list">' + cards + '</div>'
@@ -461,7 +508,7 @@
   }
 
   function showOllamaOfflineHint() {
-    showChatSetupState(
+    setChatSetupContent(
       '<div class="ollama-offline-box">' +
         '<strong>Ollama läuft gerade nicht.</strong> Für die Chatsteuerung einmalig ' +
         '<a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> ' +
@@ -470,64 +517,99 @@
       '<div class="actions"><button class="secondary" id="chatRecheckBtn" type="button">Erneut prüfen</button></div>'
     );
     const btn = $('chatRecheckBtn');
-    if (btn) btn.addEventListener('click', initChat);
+    if (btn) btn.addEventListener('click', runChatSetupCheck);
+    updateChatAvailability();
+    setChatBadgeState();
   }
 
-  // preferSaved=true (Start der Anwendung): ein zuvor gewaehltes,
-  // weiterhin installiertes Modell wird automatisch wieder aktiviert.
-  // preferSaved=false (Klick auf das aktive Badge, "Modell wechseln"):
-  // zeigt immer die Modellwahl, auch wenn ein gemerktes Modell noch
-  // installiert ist, sonst liesse sich nie zu einem anderen Modell
-  // wechseln.
-  async function initChat(preferSaved) {
-    if (preferSaved === undefined) preferSaved = true;
+  // Fragt Ollama Status, Modellliste und installierte Modelle ab und
+  // aktualisiert dabei die globalen chatModels/installedModelIds/
+  // ollamaKnownRunning. Gemeinsame Grundlage fuer den stillen Check beim
+  // Start (initChat) und den sichtbaren Check im Popup
+  // (runChatSetupCheck), damit beide nicht auseinanderlaufen.
+  async function fetchChatSetupData() {
     if (!isTauri()) {
-      showChatSetupState('<div class="empty-hint">Chatsteuerung ist nur innerhalb der NovaStudioCast Anwendung verfügbar.</div>');
-      return;
+      ollamaKnownRunning = false;
+      return { running: false, unavailable: true };
     }
-    showChatSetupState('<div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>');
-
     let status;
     try {
       status = await window.__TAURI__.core.invoke('ollama_status');
     } catch (e) {
       status = { running: false };
     }
-    if (!status || !status.running) {
-      showOllamaOfflineHint();
-      return;
-    }
+    ollamaKnownRunning = !!(status && status.running);
+    if (!ollamaKnownRunning) return { running: false };
 
-    let models = [];
-    let installed = [];
     try {
-      [models, installed] = await Promise.all([
+      const [models, installed] = await Promise.all([
         window.__TAURI__.core.invoke('list_chat_models'),
         window.__TAURI__.core.invoke('ollama_installed_models'),
       ]);
+      chatModels = models;
+      const installedNames = installed.map((m) => m.name);
+      installedModelIds = new Set(
+        chatModels.filter((m) => installedNames.some((n) => installedNameMatchesId(n, m.id))).map((m) => m.id)
+      );
+      return { running: true };
     } catch (e) {
       console.error(e);
-      showChatSetupState('<div class="status-error">Ollama antwortet, aber die Modellliste konnte nicht geladen werden: ' + escapeHtml(String(e)) + '</div>');
+      return { running: true, error: e };
+    }
+  }
+
+  // Stiller Check beim Anwendungsstart, oeffnet das Popup nicht. Ein
+  // zuvor gewaehltes, weiterhin installiertes Modell wird automatisch
+  // reaktiviert. Sonst bleibt das Popup einfach zu, Abzeichen und
+  // Eingabefeld Platzhalter zeigen aber schon den erkannten Stand
+  // (Ollama laeuft nicht / laeuft, aber noch kein Modell gewaehlt).
+  async function initChat() {
+    updateChatAvailability();
+    const result = await fetchChatSetupData();
+    if (result.running) {
+      let saved = null;
+      try { saved = localStorage.getItem(ACTIVE_CHAT_MODEL_KEY); } catch (e) { /* egal */ }
+      if (saved && installedModelIds.has(saved)) {
+        activateChat(saved);
+        return;
+      }
+    }
+    updateChatAvailability();
+    setChatBadgeState();
+  }
+
+  // Fuellt das Popup selbst, aufgerufen beim Oeffnen (Klick auf das
+  // Abzeichen) und beim "Erneut prüfen" Knopf.
+  async function runChatSetupCheck() {
+    setChatSetupContent('<div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>');
+    if (!isTauri()) {
+      setChatSetupContent('<div class="empty-hint">Chatsteuerung ist nur innerhalb der NovaStudioCast Anwendung verfügbar.</div>');
       return;
     }
-
-    chatModels = models;
-    const installedNames = installed.map((m) => m.name);
-    installedModelIds = new Set(
-      chatModels.filter((m) => installedNames.some((n) => installedNameMatchesId(n, m.id))).map((m) => m.id)
-    );
-
-    let saved = null;
-    try { saved = localStorage.getItem(ACTIVE_CHAT_MODEL_KEY); } catch (e) { /* egal */ }
-    if (preferSaved && saved && installedModelIds.has(saved)) {
-      activateChat(saved);
+    const result = await fetchChatSetupData();
+    if (!result.running) {
+      showOllamaOfflineHint();
       return;
     }
+    if (result.error) {
+      setChatSetupContent('<div class="status-error">Ollama antwortet, aber die Modellliste konnte nicht geladen werden: ' + escapeHtml(String(result.error)) + '</div>');
+      updateChatAvailability();
+      setChatBadgeState();
+      return;
+    }
+    updateChatAvailability();
+    setChatBadgeState();
     renderModelPicker();
   }
 
-  chatBadge.addEventListener('click', () => {
-    if (chatBadge.classList.contains('badge-active')) initChat(false);
+  chatBadge.addEventListener('click', openChatSetupModal);
+  chatSetupCloseBtn.addEventListener('click', closeChatSetupModal);
+  chatSetupOkBtn.addEventListener('click', closeChatSetupModal);
+  chatSetupOverlay.addEventListener('click', (e) => {
+    if (e.target === chatSetupOverlay) closeChatSetupModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && chatSetupOverlay.style.display !== 'none') closeChatSetupModal();
   });
 
   function buildChatContext() {

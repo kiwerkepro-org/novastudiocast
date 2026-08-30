@@ -61,21 +61,13 @@
          app.js Abschnitt "Chat / Ollama" sowie src-tauri/src/chat/. -->
     <div class="panel chat-panel">
       <div class="chat-header">
-        <h2>Chat Steuerung <span class="badge-soon" id="chatBadge">Lokal</span></h2>
+        <h2>Chat Steuerung</h2>
+        <button type="button" class="chat-badge" id="chatBadge" title="Lokales KI Modell einrichten oder wechseln">Lokal</button>
       </div>
 
-      <!-- Ollama Status, Modellwahl und Downloadfortschritt, ersetzt die
-           eigentliche Unterhaltung, solange noch kein Modell aktiv ist,
-           siehe app.js, initChat/showChatSetupState. -->
-      <div class="chat-setup" id="chatSetup">
-        <div class="chat-setup-inner" id="chatSetupContent">
-          <div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>
-        </div>
-      </div>
-
-      <div class="chat-messages" id="chatMessages" style="display:none;"></div>
-      <div class="chat-input-row" id="chatInputRow" style="display:none;">
-        <textarea id="chatInput" placeholder="Textbefehl eingeben…" disabled></textarea>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-row" id="chatInputRow">
+        <textarea id="chatInput" placeholder="Prüfe Ollama…" disabled></textarea>
         <button id="chatSendBtn" class="secondary" type="button" disabled>Senden</button>
       </div>
       <div class="chat-note" id="chatNote">Lokale Sprachmodell Anbindung über Ollama, läuft komplett auf deinem Rechner.</div>
@@ -250,6 +242,29 @@
     <span id="toolWarningText">Es konnten nicht alle benötigten Programme gefunden werden.</span>
   </div>
 
+</div>
+
+<!-- Modell/Ollama Einrichtung als eigenes Popup statt fest im Chatbereich
+     eingebaut, siehe app.js Abschnitt "Chat / Ollama". Oeffnet sich ueber
+     Klick auf das "Lokal" Abzeichen oben links im Chat Steuerung Panel,
+     damit die eigentliche Chat Eingabe im Alltag nicht bei jedem Start
+     von der Modellwahl verdeckt wird (Rueckmeldung JJ, Sitzung 6: "kann
+     ich trotzdem im Chat nichts eingeben"). Bewusst ausserhalb von
+     .chat-panel platziert, damit das Popup unabhaengig von dessen fester
+     Hoehe zentriert ueber der ganzen Oberflaeche erscheinen kann. -->
+<div class="chat-setup-overlay" id="chatSetupOverlay" style="display:none;">
+  <div class="chat-setup-modal">
+    <div class="chat-setup-modal-header">
+      <h3>Lokales KI Modell</h3>
+      <button type="button" class="chat-setup-close" id="chatSetupCloseBtn" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="chat-setup-inner" id="chatSetupContent">
+      <div class="empty-hint">Prüfe, ob Ollama bereits läuft…</div>
+    </div>
+    <div class="chat-setup-modal-footer">
+      <button type="button" class="secondary" id="chatSetupOkBtn">Ok</button>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>
