@@ -1,6 +1,6 @@
 [package]
 name = "novastudiocast"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "NovaStudioCast, lokale und ressourcenschonende Pipeline für automatisierte Videoproduktion von KI-WERKE"
 
