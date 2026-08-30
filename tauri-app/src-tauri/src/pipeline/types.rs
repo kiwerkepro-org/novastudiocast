@@ -24,6 +24,97 @@ pub struct PipelineOptions {
     /// lässt.
     #[serde(default)]
     pub analyze_source: AnalyzeSource,
+    /// Schritt 5, ganz am Ende, optional: sichtbare und maschinenlesbare
+    /// KI Kennzeichnung nach Artikel 50 EU AI Act (in Kraft seit
+    /// 2026-08-02). Eigener, unabhaengig an und abschaltbarer Baustein
+    /// nach dem in Sitzung 2 vereinbarten Options Muster (siehe
+    /// MEMORY.md), berührt Schritt 1 bis 4 nicht. `None` = Baustein aus,
+    /// `Some(...)` = Baustein an mit den jeweiligen Einstellungen. Siehe
+    /// pipeline/ai_disclosure.rs fuer die eigentliche Umsetzung.
+    ///
+    /// Rechtlicher Hinweis, keine Rechtsberatung: ob und in welchem
+    /// Umfang Artikel 50 auf NovaStudioCasts eigene Bearbeitungsschritte
+    /// zutrifft, ist eine juristische Einschaetzung, siehe MEMORY.md,
+    /// Abschnitt "KI Kennzeichnung, Sitzung 4". Dieses Modul macht die
+    /// Kennzeichnung moeglich, ersetzt aber keine eigene Pruefung durch
+    /// den Nutzer, ob und wie er sie einsetzt.
+    #[serde(default)]
+    pub ai_disclosure: Option<AiDisclosureOptions>,
+}
+
+/// Einstellungen fuer Schritt 5, siehe `PipelineOptions::ai_disclosure`
+/// und `pipeline/ai_disclosure.rs`.
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDisclosureOptions {
+    pub text: AiDisclosureText,
+    /// Nur relevant, wenn `text` == `AiDisclosureText::Custom`.
+    #[serde(default)]
+    pub custom_text: Option<String>,
+    pub position: AiDisclosurePosition,
+    pub timing: AiDisclosureTiming,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AiDisclosureText {
+    KiGeneriert,
+    KiUeberarbeitet,
+    Custom,
+}
+
+impl AiDisclosureText {
+    /// Loest den tatsaechlich einzublendenden Text auf. Bei `Custom` mit
+    /// leerem oder fehlendem `custom_text` (sollte das Frontend eigentlich
+    /// verhindern) faellt der Baustein auf "KI ueberarbeitet" zurueck,
+    /// statt eine leere Einblendung zu erzeugen.
+    pub fn resolve(&self, custom_text: &Option<String>) -> String {
+        match self {
+            AiDisclosureText::KiGeneriert => "KI generiert".to_string(),
+            AiDisclosureText::KiUeberarbeitet => "KI überarbeitet".to_string(),
+            AiDisclosureText::Custom => custom_text
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "KI überarbeitet".to_string()),
+        }
+    }
+}
+
+/// Position der Einblendung, immer am unteren Bildrand, siehe
+/// `pipeline/ai_disclosure.rs` fuer den festen Mindestabstand von 20
+/// Pixeln zum jeweiligen Rand (JJ, Sitzung 4: "von links 20 Pixel
+/// mindestens eingerückt... von rechts 20 Pixel").
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AiDisclosurePosition {
+    UntenLinks,
+    UntenMitte,
+    UntenRechts,
+}
+
+/// Sichtbarkeitsfenster der Einblendung, komplett vom Nutzer bestimmt, JJ
+/// wollte hier ausdruecklich nichts fest vorgeben (Sitzung 4,
+/// 2026-08-30): "Er kann das von mir das ganze Video durchlassen oder er
+/// kann sagen, nee, [...] mache das nach 20 Sekunden fuer 30 Sekunden und
+/// dann soll es wieder weg sein."
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDisclosureTiming {
+    pub start_reference: AiDisclosureStartReference,
+    /// Sekunden Abstand vom jeweiligen Bezugspunkt (Anfang oder Ende des
+    /// fertigen Gesamtvideos).
+    pub start_offset_seconds: f64,
+    /// `None` = laeuft ab dem Startpunkt bis zum Ende des Videos durch.
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AiDisclosureStartReference {
+    Anfang,
+    Ende,
 }
 
 #[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]

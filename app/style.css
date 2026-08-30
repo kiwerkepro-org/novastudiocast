@@ -210,8 +210,9 @@ html[data-theme="light"] .theme-toggle .ico-sun { display: block; }
 label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px; color: var(--text); }
 .row { margin-bottom: 14px; }
 .row-inline { display: flex; gap: 10px; align-items: center; }
+.row-inline select, .row-inline input { width: auto; }
 
-input[type="text"], select, textarea {
+input[type="text"], input[type="number"], select, textarea {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);

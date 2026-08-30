@@ -37,7 +37,8 @@
       "binaries/node"
     ],
     "resources": {
-      "../remotion": "remotion"
+      "../remotion": "remotion",
+      "resources/fonts": "fonts"
     },
     "windows": {
       "nsis": {

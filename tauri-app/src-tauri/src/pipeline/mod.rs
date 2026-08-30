@@ -9,6 +9,7 @@
 // beginnt Clip 2). Schritt 4 läuft am Ende genau einmal für den gesamten
 // Batch, nicht pro Clip.
 
+pub mod ai_disclosure;
 pub mod audio_refine;
 pub mod cut_analysis;
 pub mod denoise;
@@ -132,13 +133,27 @@ pub async fn run_batch(
         Some("Remotion startet…".into()),
         None,
     );
-    let final_video_path = render::run(&app, &manifest, &manifest_path, &batch_work_dir)
+    let mut final_video_path = render::run(&app, &manifest, &manifest_path, &batch_work_dir)
         .await
         .map_err(|e| {
             emit_progress(&app, None, "render", "error", Some(e.clone()), None);
             e
         })?;
     emit_progress(&app, None, "render", "done", Some("fertig".into()), None);
+
+    // Schritt 5, optional: KI Kennzeichnung nach Artikel 50 EU AI Act,
+    // siehe pipeline/ai_disclosure.rs und pipeline/types.rs,
+    // PipelineOptions::ai_disclosure. Laeuft bewusst erst nach dem
+    // fertigen Gesamtvideo aus Schritt 4, unabhaengig ein und
+    // abschaltbar, aendert nichts an Schritt 1 bis 4. Ersetzt bei
+    // aktivem Baustein den zurueckgegebenen `final_video_path` durch die
+    // gekennzeichnete Fassung, das unveraenderte Remotion Ergebnis bleibt
+    // als Zwischendatei im Arbeitsordner erhalten.
+    if let Some(ai_disclosure_options) = &options.ai_disclosure {
+        final_video_path =
+            ai_disclosure::run(&app, ai_disclosure_options, &final_video_path, &batch_work_dir)
+                .await?;
+    }
 
     Ok(BatchResult {
         final_video_path,

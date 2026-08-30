@@ -224,6 +224,58 @@
   loudnormToggle.addEventListener('change', syncLoudnormOptions);
   syncLoudnormOptions();
 
+  // KI Kennzeichnung nach Artikel 50 EU AI Act (Sitzung 4, 2026-08-30).
+  // Siehe pipeline/ai_disclosure.rs und pipeline/types.rs für die
+  // Rust seitige Umsetzung. Standardmäßig aus, weil es sich um ein rein
+  // optionales, per Haken zuschaltbares Compliance Modul handelt, siehe
+  // MEMORY.md.
+  const aiDisclosureToggle = $('aiDisclosureToggle');
+  const aiDisclosureOptionsBox = $('aiDisclosureOptions');
+  function syncAiDisclosureOptions() {
+    aiDisclosureOptionsBox.style.display = aiDisclosureToggle.checked ? 'block' : 'none';
+  }
+  aiDisclosureToggle.addEventListener('change', syncAiDisclosureOptions);
+  syncAiDisclosureOptions();
+
+  const aiDisclosureText = $('aiDisclosureText');
+  const aiDisclosureCustomTextRow = $('aiDisclosureCustomTextRow');
+  function syncAiDisclosureCustomText() {
+    aiDisclosureCustomTextRow.style.display = aiDisclosureText.value === 'custom' ? 'block' : 'none';
+  }
+  aiDisclosureText.addEventListener('change', syncAiDisclosureCustomText);
+  syncAiDisclosureCustomText();
+
+  const aiDisclosureDurationMode = $('aiDisclosureDurationMode');
+  const aiDisclosureDurationSeconds = $('aiDisclosureDurationSeconds');
+  function syncAiDisclosureDuration() {
+    aiDisclosureDurationSeconds.style.display = aiDisclosureDurationMode.value === 'fixed' ? 'inline-block' : 'none';
+  }
+  aiDisclosureDurationMode.addEventListener('change', syncAiDisclosureDuration);
+  syncAiDisclosureDuration();
+
+  // Baut das aiDisclosure Feld für den Tauri Aufruf, `null` wenn der
+  // Baustein ausgeschaltet ist (siehe PipelineOptions::ai_disclosure,
+  // Option<...> in Rust, deserialisiert `null` als `None`).
+  function buildAiDisclosureOptions() {
+    if (!aiDisclosureToggle.checked) return null;
+    const textChoice = aiDisclosureText.value;
+    const durationMode = aiDisclosureDurationMode.value;
+    const startOffset = parseFloat($('aiDisclosureStartOffset').value);
+    const fixedDuration = parseFloat(aiDisclosureDurationSeconds.value);
+    return {
+      text: textChoice,
+      customText: textChoice === 'custom' ? $('aiDisclosureCustomText').value : null,
+      position: $('aiDisclosurePosition').value,
+      timing: {
+        startReference: $('aiDisclosureStartReference').value,
+        startOffsetSeconds: Number.isFinite(startOffset) ? startOffset : 0,
+        durationSeconds: durationMode === 'fixed'
+          ? (Number.isFinite(fixedDuration) ? fixedDuration : null)
+          : null,
+      },
+    };
+  }
+
   // ---------- Pipeline Ablauf ----------
   // Je Clip drei Schritte (siehe pipeline/mod.rs, run_clip_steps), plus ein
   // batchweiter Render Schritt am Ende (clipId ist dabei null, siehe
@@ -285,6 +337,25 @@
     return $('step-render');
   }
 
+  function ensureAiDisclosureProgressRow() {
+    let row = $('step-ai-disclosure');
+    if (row) return row;
+    $('progressEmptyHint').style.display = 'none';
+
+    const group = document.createElement('div');
+    group.className = 'clip-progress-group';
+    group.innerHTML =
+      '<div class="cpg-title">KI-Kennzeichnung (Artikel 50 EU AI Act)</div>' +
+      '<div class="pipeline-steps">' +
+      '<div class="pipeline-step" id="step-ai-disclosure">' +
+      '<span class="ps-dot"></span>' +
+      '<span class="ps-label">Hinweis einblenden</span>' +
+      '<span class="ps-detail" id="step-ai-disclosure-detail"></span>' +
+      '</div></div>';
+    $('progressArea').appendChild(group);
+    return $('step-ai-disclosure');
+  }
+
   function resetProgress() {
     $('progressArea').innerHTML = '<div class="empty-hint" id="progressEmptyHint">Verarbeitung läuft…</div>';
     $('logBox').textContent = '';
@@ -314,6 +385,8 @@
     if (clipId) {
       ensureClipProgressGroup(clipId);
       el = $('step-' + clipId + '-' + step);
+    } else if (step === 'ai-disclosure') {
+      el = ensureAiDisclosureProgressRow();
     } else {
       el = ensureRenderProgressRow();
     }
@@ -358,6 +431,7 @@
       loudnormTarget: parseInt($('loudnormTarget').value, 10),
       marginSeconds: parseInt(marginSlider.value, 10) / 10,
       analyzeSource: 'postDenoise',
+      aiDisclosure: buildAiDisclosureOptions(),
     };
 
     try {

@@ -110,6 +110,66 @@
                 <option value="-14">-14 LUFS (Streaming, laut)</option>
               </select>
             </div>
+
+            <div class="checkbox-row" style="margin-top:16px;">
+              <input type="checkbox" id="aiDisclosureToggle">
+              <label for="aiDisclosureToggle">KI-Kennzeichnung nach Artikel 50 EU AI Act einblenden</label>
+            </div>
+            <div class="hint-small">
+              Blendet einen Hinweistext sichtbar ins fertige Video ein und hinterlegt zusätzlich
+              einen maschinenlesbaren Hinweis in den Videodateidaten. Prüfe im Zweifel selbst
+              oder mit rechtlicher Beratung, ob und in welcher Form das für deine Videos nötig
+              ist.
+            </div>
+
+            <div id="aiDisclosureOptions" style="margin-top:14px; display:none;">
+              <div class="row">
+                <label for="aiDisclosureText">Hinweistext</label>
+                <select id="aiDisclosureText">
+                  <option value="kiGeneriert">KI generiert</option>
+                  <option value="kiUeberarbeitet" selected>KI überarbeitet</option>
+                  <option value="custom">Eigener Text…</option>
+                </select>
+              </div>
+              <div class="row" id="aiDisclosureCustomTextRow" style="display:none;">
+                <label for="aiDisclosureCustomText">Eigener Hinweistext</label>
+                <input type="text" id="aiDisclosureCustomText" maxlength="120"
+                       placeholder="z.B. Mit KI-Unterstützung bearbeitet">
+              </div>
+
+              <div class="row">
+                <label for="aiDisclosurePosition">Position im Bild</label>
+                <select id="aiDisclosurePosition">
+                  <option value="untenLinks">Unten links</option>
+                  <option value="untenMitte" selected>Unten Mitte</option>
+                  <option value="untenRechts">Unten rechts</option>
+                </select>
+                <div class="hint-small">Mindestens 20 Pixel Abstand zum Bildrand.</div>
+              </div>
+
+              <div class="row">
+                <label>Ab wann sichtbar</label>
+                <div class="row-inline">
+                  <select id="aiDisclosureStartReference" style="width:auto;flex:1;">
+                    <option value="anfang" selected>Sekunden nach Videostart</option>
+                    <option value="ende">Sekunden vor Videoende</option>
+                  </select>
+                  <input type="number" id="aiDisclosureStartOffset" min="0" step="1" value="0" style="width:90px;">
+                </div>
+              </div>
+
+              <div class="row">
+                <label>Wie lange sichtbar</label>
+                <div class="row-inline">
+                  <select id="aiDisclosureDurationMode" style="width:auto;flex:1;">
+                    <option value="whole" selected>Bis zum Ende des Videos</option>
+                    <option value="fixed">Feste Dauer (Sekunden)</option>
+                  </select>
+                  <input type="number" id="aiDisclosureDurationSeconds" min="1" step="1" value="30"
+                         style="width:90px; display:none;">
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="panel">

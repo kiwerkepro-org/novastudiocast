@@ -48,6 +48,7 @@ pipeline/
   audio_refine.rs         Schritt 2, FFmpeg EQ + Loudnorm (aus NovaPhonic)
   cut_analysis.rs         Schritt 3, Auto Editor Analyse, neu
   render.rs               Schritt 4, ruft das Remotion Renderskript per Node Sidecar auf
+  ai_disclosure.rs         Schritt 5, optional, KI Kennzeichnung Artikel 50 EU AI Act
 ```
 
 Dazu, außerhalb von `src-tauri`, das eigenständige Node/React Projekt unter
@@ -228,6 +229,81 @@ bestätigt erreichbar), er wurde aber mangels Windows Umgebung und mangels
 GitHub Zugriff aus dieser Entwicklungsumgebung heraus noch NICHT selbst
 ausgeführt. Der erste echte Lauf nach dem Einrichten des Repositories
 (siehe `GITHUB_SETUP.md`) ist der erste echte Test der gesamten Kette.
+## KI Kennzeichnung, Schritt 5 (Sitzung 4, 2026-08-30)
+
+Optionaler fünfter Schritt, läuft nur wenn `PipelineOptions.ai_disclosure`
+gesetzt ist (siehe `pipeline/types.rs`), direkt nach dem fertigen
+Gesamtvideo aus Schritt 4, unabhängig ein und abschaltbar. Entscheidungen
+mit JJ (vollständiger Wortlaut in `MEMORY.md`, Abschnitt "KI
+Kennzeichnung, Sitzung 4"):
+
+- Eigenes NovaStudioCast Modul (`pipeline/ai_disclosure.rs`), nicht an
+  NovaImage weitergereicht.
+- Drei Textvorlagen ("KI generiert", "KI überarbeitet") plus ein eigener,
+  frei eingegebener Text.
+- Position immer am unteren Bildrand (links, Mitte, rechts), mit
+  mindestens 20 Pixel Abstand zum jeweiligen Rand.
+- Sichtbarkeitsfenster (wann die Einblendung beginnt, wie lange sie
+  bleibt) komplett frei vom Nutzer bestimmbar, kein fester Standardwert,
+  siehe `AiDisclosureTiming` in `pipeline/types.rs`.
+- Zusätzlich zur sichtbaren Einblendung ein maschinenlesbarer Hinweis als
+  MP4 Metadaten Tag (`comment`).
+
+Technisch: die sichtbare Einblendung wird per FFmpeg `drawtext` direkt in
+die Bildpixel eingebrannt, das Video muss dafür anders als bei Untertitel
+oder Kapitelmarken (geplant als verlustfreier Remux) neu kodiert werden
+(`libx264`), nur die Tonspur bleibt per `-c:a copy` unangetastet. Das
+unveränderte Remotion Ergebnis aus Schritt 4 bleibt zusätzlich als
+Zwischendatei im Arbeitsordner erhalten, `BatchResult.final_video_path`
+zeigt bei aktivem Baustein auf die neue, gekennzeichnete Datei
+(`novastudiocast_final_ki_kennzeichnung.mp4`).
+
+Die Gesamtdauer des fertigen Videos (gebraucht für den Bezugspunkt "Ende"
+beim Sichtbarkeitsfenster) wird per `ffmpeg -i` und Auslesen der
+"Duration:" Zeile ermittelt, nicht aus dem Manifest, weil die
+`transitionSeconds` Überblendungen aus Schritt 4 die Summe der
+Einzeldauern verkürzen und die Manifest Daten das nicht abbilden.
+
+**Schriftdatei für FFmpeg drawtext:** Windows FFmpeg Builds haben in der
+Regel weder Fontconfig noch WOFF2 Unterstützung in Freetype eingebaut,
+drawtext braucht also eine echte `.ttf` Datei mit explizitem Pfad. Statt
+eine neue Schrift zu beschaffen, wurde die bereits im Projekt vorhandene,
+lizenzierte Inter Schrift (`app/assets/fonts/Inter-Variable.woff2`, OFL
+Lizenz) einmalig mit `fontTools` aus dem WOFF2 Container herausgelöst
+(`f.flavor = None; f.save(...)`, dieselben Glyphen, nur andere
+Verpackung) und liegt jetzt als `tauri-app/src-tauri/resources/fonts/
+Inter-Regular.ttf` (plus Lizenztext) im Projekt, eingetragen in
+`tauri.conf.json` unter `bundle.resources` (`"resources/fonts": "fonts"`).
+Zur Laufzeit über `app.path().resource_dir().join("fonts").join(
+"Inter-Regular.ttf")` aufgelöst, genau wie das Remotion Renderskript.
+
+**FFmpeg Filtergraph Escaping, per echtem Testlauf bestätigt:** Windows
+Pfade enthalten nach dem Laufwerksbuchstaben einen Doppelpunkt, der im
+FFmpeg Filtergraphen sonst als Optionstrenner gelesen wird. Reines
+Escaping des Doppelpunkts (`C\:/...`) reicht dabei NICHT aus, wenn direkt
+danach eine weitere `key=value` Option im selben Filter folgt (hier
+`fontfile=...:textfile=...`): FFmpeg brach in diesem Fall mit "Both text
+and text file provided" ab, obwohl gar kein `text=` gesetzt war. Erst mit
+zusätzlichen einfachen Anführungszeichen um den escapten Pfad
+(`fontfile='C\:/...'`) trat der Fehler in keinem Testlauf mehr auf, siehe
+`escape_ffmpeg_filter_path` in `pipeline/ai_disclosure.rs` für die
+Umsetzung und den ausführlichen Kommentar dort. Getestet an einem lokal
+erzeugten Testvideo mit einem simulierten Windows Pfad (echter
+Verzeichnisname mit Doppelpunkt), inklusive sichtbarer Kontrolle des
+gerenderten Frames (Text mit Umlaut "KI überarbeitet" korrekt lesbar,
+richtig positioniert, halbtransparente Box im Hintergrund) und
+`ffprobe` Kontrolle des Metadaten Tags. Nicht getestet: der echte
+Windows FFmpeg Build aus der Baupipeline selbst, nur ein lokaler Linux
+FFmpeg mit vergleichbarer Konfiguration (`--enable-libfreetype`
+vorhanden). Sollte beim ersten echten Windows Baulauf stichprobenartig
+gegengeprüft werden, siehe "Offene Punkte" unten.
+
+`cargo check` sowie `cargo clippy --all-targets` liefen mit diesem neuen
+Modul in dieser Sitzung erneut fehlerfrei durch (Linux Testumgebung mit
+denselben Tauri Systempaketen wie in Sitzung 3, Sidecar Platzhalterdateien
+für `x86_64-unknown-linux-gnu`), keine neuen Fehler oder inhaltlichen
+Warnungen gegenüber dem bereits bekannten Stand.
+
 ## Offene Punkte für den nächsten Entwicklungsschritt
 
 1. **`--export v1` Flagname prüfen.** Wie schon bei NovaPhonics
@@ -251,6 +327,14 @@ ausgeführt. Der erste echte Lauf nach dem Einrichten des Repositories
    Remotion Projekt). Die Icons sind vorerst noch die unveränderten
    NovaPhonic Dateien, rein als Platzhalter, damit das Projekt überhaupt
    baubar ist, echte NovaStudioCast eigene Icons stehen noch aus.
+5. **KI Kennzeichnung (Schritt 5), FFmpeg drawtext auf dem echten Windows
+   Build noch nicht gegengeprüft (Sitzung 4, 2026-08-30).** Der komplette
+   Ablauf inklusive Escaping eines Windows artigen Pfads mit
+   Laufwerksbuchstaben wurde an einem lokalen Linux FFmpeg erfolgreich
+   durchgetestet (siehe Abschnitt "KI Kennzeichnung, Schritt 5" oben),
+   nicht aber am tatsächlichen, über die Baupipeline besorgten Windows
+   FFmpeg. Sollte beim ersten echten Baulauf mit einem kurzen Testvideo
+   einmal durchlaufen werden.
 
 ## Kompilierstatus
 
