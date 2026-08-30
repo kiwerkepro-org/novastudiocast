@@ -43,6 +43,25 @@
     applyTheme(current === 'dark' ? 'light' : 'dark');
   });
 
+  // ---------- Versionsanzeige ----------
+  // "v0.1.0" in index.html war bisher ein fest eingetragener Platzhalter,
+  // der nie die tatsächlich installierte Version widerspiegelt hat (JJ
+  // Rückmeldung, Sitzung 4: "das ist ja nervig, ich will ja wissen, was
+  // der Sache ist"). Liest die echte Version jetzt zur Laufzeit über die
+  // Tauri App API aus (core:default deckt app:allow-version bereits ab,
+  // keine Capabilities Änderung nötig). Läuft die Oberfläche mal ohne
+  // Tauri (z.B. reine Browser Vorschau während der Entwicklung), bleibt
+  // einfach der HTML Platzhalter stehen.
+  async function initVersionTag() {
+    if (!isTauri() || !window.__TAURI__.app) return;
+    try {
+      const version = await window.__TAURI__.app.getVersion();
+      $('versionTag').textContent = 'v' + version;
+    } catch (e) {
+      console.warn('Version konnte nicht ausgelesen werden:', e);
+    }
+  }
+
   // ---------- Werkzeug Check ----------
   async function checkTools() {
     if (!isTauri()) return;
@@ -536,6 +555,7 @@
 
   // ---------- Start ----------
   renderClipList();
+  initVersionTag();
   initProgressListener();
   checkTools();
   checkForUpdate(true);
